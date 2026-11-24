@@ -1,6 +1,7 @@
 import subprocess
 import urllib.request
 from pathlib import Path
+from permissions import WORKSPACE, resolve_in_workspace
 
 MAX_OUTPUT = 8000  # 工具 -> 模型；可以返回的最大字符数
 TOOLS = {}  # 注册表：name -> {"schema":..., "func": ...}
@@ -66,8 +67,10 @@ def list_dir(path="."):
 
 @tool("read_file", "读取指定路径文件的内容", _params(path="文件路径"))
 def read_file(path: str) -> str:
-    with open(path, encoding="utf-8") as file:
-        return file.read()
+    p = resolve_in_workspace(path)
+    if p is None:
+        return "[错误] 路径在工作区之外"
+    return p.read_text(encoding="utf-8")
 
 
 @tool(
@@ -76,9 +79,12 @@ def read_file(path: str) -> str:
     _params(Path="文件路径", content="要写入的完整内容"),
 )
 def write_file(path: str, content: str) -> str:
-    with open(path, "w", encoding="utf-8") as file:
-        file.write(content)
-    return f"已写入({path})-({len(content)})字符"
+    p = resolve_in_workspace(path)
+    if p is None:
+        return "[错误] 路径在工作区之外"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding="utf-8")
+    return f"已写入 {p.relative_to(WORKSPACE)} ({len(content)}字符)"
 
 
 @tool("run_shell", "在当前目录下指定命令", _params(command="执行的命令"))
@@ -90,6 +96,7 @@ def run_shell(command: str) -> str:
         p = subprocess.run(
             command,
             shell=True,
+            cwd=WORKSPACE,
             capture_output=True,
             text=True,
             timeout=60,
@@ -98,7 +105,7 @@ def run_shell(command: str) -> str:
         return "命令超出执行时间"
     except Exception as e:
         return f"[Error]:{e}"
-    return (p.stdout + p.stderr)[-4000:] or "(无输出)"
+    return f"[exit {p.returncode}]\n{p.stdout}{p.stderr}"
 
 
 @tool(
