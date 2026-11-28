@@ -48,7 +48,7 @@ def clear_old_tool_results(messages, keep=KEEP_RECENT_TOOL_RESULTS):
     # 找到所有的工具调用
     tool_idx = []
     for index, message in enumerate(messages):
-        if message["role"] == "tool" and not message["content"].startwith(
+        if message["role"] == "tool" and not message["content"].startswith(
             KEEP_PREFIXES
         ):
             tool_idx.append(index)

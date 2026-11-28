@@ -18,7 +18,7 @@ def parse_skill(text):
             return meta, "\n".join(lines[i + 1 :]).strip()
         key, sep, value = line.partition(":")
         if sep:
-            meta[key.strip()] == value.strip()
+            meta[key.strip()] = value.strip()
     return {}, text.strip()
 
 
