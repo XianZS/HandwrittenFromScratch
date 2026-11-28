@@ -27,9 +27,28 @@ BASE_SYSTEM = """
     你如果已经被拒绝了权限调用，那么就直接退出当前会话就行，不要再执行额外的操作。
 """
 MAX_STEPS = 20
-SOFT_LIMIT = 160
-HARD_LIMIT = 240
+SOFT_LIMIT = 1600
+HARD_LIMIT = 2400
 usage = {"prompt_tokens": 0}
+
+
+class Session:
+    """
+    一个会话 = 一份 messages + 一个权限管理器 + 上一次的token数
+    """
+
+    def __init__(self, name, ask=None, persist=True):
+        self.name = name
+        self.persist = persist
+        saved = load_session(name) if persist else None
+        self.messages = saved or [{"role": "system", "content": ""}]
+        self.messages[0] = {"role": "system", "content": build_system()}
+        self.perms = PermissionManager(ask=ask)
+        self.prompt_tokens = 0
+
+    def save(self):
+        if self.persist:
+            save_session(self.name, self.messages)
 
 
 def build_system():
@@ -59,7 +78,13 @@ def handle_call(call, perms):
     return execute(name, args)
 
 
-def run(user_input: str, messages, perms) -> str:
+def run(
+    session: Session,
+    user_input: str,
+    client,
+    log=print,
+) -> str:
+    messages = session.messages
     messages.append({"role": "user", "content": user_input})
     for _ in range(MAX_STEPS):
         # 用上一轮调用的真实token数，决定这一轮要不要处理
@@ -73,8 +98,8 @@ def run(user_input: str, messages, perms) -> str:
             messages=messages,
             tools=get_schemas(),
         )
-        usage["prompt_tokens"] = (
-            model_response.usage.prompt_tokens if model_response else 0
+        session.prompt_tokens = (
+            model_response.usage.prompt_tokens if model_response.usage else 0
         )
         msg = model_response.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
@@ -82,27 +107,37 @@ def run(user_input: str, messages, perms) -> str:
         if not msg.tool_calls:
             return f"[result]: {msg.content}"
         for tool_call in msg.tool_calls:
-            print(f"🗜️ {tool_call.function.name}({tool_call.function.arguments[:80]})")
-            tool_response = handle_call(tool_call, perms)
+            log(f"🗜️ {tool_call.function.name}({tool_call.function.arguments[:80]})")
+            tool_response = handle_call(tool_call, session.perms)
             messages.append(
-                {"role": "tool", "content": tool_response, "tool_call_id": tool_call.id}
+                {
+                    "role": "tool",
+                    "content": truncate_tool_result(tool_response),
+                    "tool_call_id": tool_call.id,
+                }
             )
-    print(f"\n[达到 {MAX_STEPS}] 步骤上限，已经自动停止")
+    log(f"\n[达到 {MAX_STEPS}] 步骤上限，已经自动停止")
+    return f"\n[达到 {MAX_STEPS}] 步骤上限，已经自动停止"
+
+
+def make_client():
+    from openai import OpenAI
+
+    return OpenAI(
+        api_key=os.getenv("API_KEY"),
+        base_url=os.getenv("BASE_URL"),
+    )
 
 
 def main():
-    messages = load_session("default") or [{"role": "system", "content": ""}]
-    messages[0] = {
-        "role": "system",
-        "content": build_system(),
-    }
-    perms = PermissionManager()
+    client = make_client()
+    session = Session("default")
     while True:
         q = input("me > ").strip()
         if q in ("exit", "quit"):
             break
-        print("\n" + run(q, messages, perms) + "\n")
-        save_session("default", messages)
+        print("\n" + run(session, q, client) + "\n")
+        session.save()
 
 
 if __name__ == "__main__":

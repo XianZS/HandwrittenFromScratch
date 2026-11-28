@@ -89,8 +89,8 @@ def write_file(path: str, content: str) -> str:
 
 @tool("run_shell", "在当前目录下指定命令", _params(command="执行的命令"))
 def run_shell(command: str) -> str:
-    if input(f"\n[需要确认] 执行命令: {command}\n允许？(y/n)").strip().lower() != "y":
-        return "用户已经拒绝执行该命令"
+    # if input(f"\n[需要确认] 执行命令: {command}\n允许？(y/n)").strip().lower() != "y":
+    #     return "用户已经拒绝执行该命令"
     try:
         print("已允许执行命令，默认执行时间为60秒")
         p = subprocess.run(
