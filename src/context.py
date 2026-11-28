@@ -22,6 +22,7 @@ MAX_TOOL_CHARS = 4000  # 单次工具调用结果最多保留的字符数
 
 KEEP_RECENT_TOOL_RESULTS = 3  # 清理时，最多保留最近几条工具结果
 KEEP_LAST_TURNS = 2  # 压缩时，原样保留最近几轮用户对话
+KEEP_PREFIXES = ("[skill]",)
 PLACEHOLDER = "[旧工具结果已清理，如需要请重新调用工具]"
 
 SUMMARY_PROMPT = """
@@ -47,7 +48,9 @@ def clear_old_tool_results(messages, keep=KEEP_RECENT_TOOL_RESULTS):
     # 找到所有的工具调用
     tool_idx = []
     for index, message in enumerate(messages):
-        if message["role"] == "tool":
+        if message["role"] == "tool" and not message["content"].startwith(
+            KEEP_PREFIXES
+        ):
             tool_idx.append(index)
     # 只保留最近keep个工具调用结果
     L = len(tool_idx)

@@ -12,6 +12,7 @@ from context import (
     save_session,
     load_session,
 )
+import skills
 
 load_dotenv()
 
@@ -20,7 +21,7 @@ client = OpenAI(
     base_url=os.getenv("BASE_URL"),
     api_key=os.getenv("API_KEY"),
 )
-SYSTEM = """
+BASE_SYSTEM = """
     你是一名代码工程师，在得到用户的任务之后，你需要完成用户的任务。
     可以在必要的时候调用相关工具。
     你如果已经被拒绝了权限调用，那么就直接退出当前会话就行，不要再执行额外的操作。
@@ -29,6 +30,10 @@ MAX_STEPS = 20
 SOFT_LIMIT = 160
 HARD_LIMIT = 240
 usage = {"prompt_tokens": 0}
+
+
+def build_system():
+    return BASE_SYSTEM + skills.project_notes() + skills.skills_section()
 
 
 def handle_call(call, perms):
@@ -86,7 +91,11 @@ def run(user_input: str, messages, perms) -> str:
 
 
 def main():
-    messages = load_session("default") or [{"role": "system", "content": SYSTEM}]
+    messages = load_session("default") or [{"role": "system", "content": ""}]
+    messages[0] = {
+        "role": "system",
+        "content": build_system(),
+    }
     perms = PermissionManager()
     while True:
         q = input("me > ").strip()

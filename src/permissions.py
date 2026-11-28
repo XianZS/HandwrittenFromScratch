@@ -8,6 +8,7 @@ from pathlib import Path
 from textwrap import indent
 
 WORKSPACE = Path(os.environ.get("NAMI_WORKSPACE", os.getcwd())).resolve()
+SKILLS_DIR = WORKSPACE / "skills"
 
 
 class Risk(Enum):
@@ -28,6 +29,7 @@ TOOL_RISK = {
     "write_file": Risk.CONFIRM,
     "run_shell": Risk.CONFIRM,
     "fetch_url": Risk.CONFIRM,
+    "load_skill": Risk.SAFE,
 }
 REMEMBERABLE = {"write_file"}
 
@@ -105,8 +107,11 @@ class PermissionManager:
             "list_dir",
         ):  # 查看当前工具是否涉及文件读写
             path = args.get("path", ".")  # 默认设置为当前目录
-            if resolve_in_workspace(path) is None:
+            p = resolve_in_workspace(path)
+            if p is None:
                 return f"路径 {path!r} 在工作区 {WORKSPACE} 之外，禁止访问。"
+            if name == "write_file" and p.is_relative_to(SKILLS_DIR):
+                return "技能目录是只读的，Agent不可以修改自己的技能"
         if name == "run_shell":
             # 执行shell的工作才查命令
             cmd = args.get("command", "")
