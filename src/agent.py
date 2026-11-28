@@ -5,6 +5,13 @@ import json
 from tools import get_schemas, execute
 from pathlib import Path
 from permissions import PermissionManager
+from context import (
+    truncate_tool_result,
+    clear_old_tool_results,
+    compact,
+    save_session,
+    load_session,
+)
 
 load_dotenv()
 
@@ -13,13 +20,15 @@ client = OpenAI(
     base_url=os.getenv("BASE_URL"),
     api_key=os.getenv("API_KEY"),
 )
-perms = PermissionManager()
 SYSTEM = """
     你是一名代码工程师，在得到用户的任务之后，你需要完成用户的任务。
     可以在必要的时候调用相关工具。
     你如果已经被拒绝了权限调用，那么就直接退出当前会话就行，不要再执行额外的操作。
 """
 MAX_STEPS = 20
+SOFT_LIMIT = 160
+HARD_LIMIT = 240
+usage = {"prompt_tokens": 0}
 
 
 def handle_call(call, perms):
@@ -45,19 +54,26 @@ def handle_call(call, perms):
     return execute(name, args)
 
 
-def run(task: str) -> str:
-    messages = [
-        {"role": "system", "content": SYSTEM},
-        {"role": "user", "content": task},
-    ]
+def run(user_input: str, messages, perms) -> str:
+    messages.append({"role": "user", "content": user_input})
     for _ in range(MAX_STEPS):
+        # 用上一轮调用的真实token数，决定这一轮要不要处理
+        if usage["prompt_tokens"] > HARD_LIMIT:
+            messages[:] = compact(client, os.getenv("MODEL_NAME"), messages)
+        elif usage["prompt_tokens"] > SOFT_LIMIT:
+            clear_old_tool_results(messages)
+
         model_response = client.chat.completions.create(
             model=os.getenv("MODEL_NAME"),
             messages=messages,
             tools=get_schemas(),
         )
+        usage["prompt_tokens"] = (
+            model_response.usage.prompt_tokens if model_response else 0
+        )
         msg = model_response.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
+
         if not msg.tool_calls:
             return f"[result]: {msg.content}"
         for tool_call in msg.tool_calls:
@@ -69,10 +85,16 @@ def run(task: str) -> str:
     print(f"\n[达到 {MAX_STEPS}] 步骤上限，已经自动停止")
 
 
-if __name__ == "__main__":
+def main():
+    messages = load_session("default") or [{"role": "system", "content": SYSTEM}]
+    perms = PermissionManager()
     while True:
         q = input("me > ").strip()
-        if q in ("exit", "quit", "q", "Ctrl+C"):
+        if q in ("exit", "quit"):
             break
-        result = run(q)
-        print(f"\n{result}+\n")
+        print("\n" + run(q, messages, perms) + "\n")
+        save_session("default", messages)
+
+
+if __name__ == "__main__":
+    main()
